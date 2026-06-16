@@ -42,6 +42,7 @@ export function createSky() {
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = -1;
+  mesh.uniforms = mat.uniforms;   // exposed for palette transitions
   return mesh;
 }
 
@@ -53,6 +54,7 @@ export function createSea() {
     fog: false,
     uniforms: {
       uTime:        { value: 0 },
+      uAgitation:   { value: 0 },
       uColorDeep:   { value: new THREE.Color(PALETTE.seaDeep) },
       uColorShallow:{ value: new THREE.Color(PALETTE.seaShallow) },
       uLineColor:   { value: new THREE.Color(PALETTE.seaLine) },
@@ -64,6 +66,7 @@ export function createSea() {
   });
   mat.extensions = { derivatives: true }; // for fwidth() in WebGL1 fallback
   const mesh = new THREE.Mesh(geo, mat);
+  mesh.uniforms = mat.uniforms;   // exposed for agitation + palette transitions
   mesh.update = (t) => { mat.uniforms.uTime.value = t; };
   return mesh;
 }

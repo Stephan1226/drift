@@ -82,6 +82,63 @@
       align-items:center; justify-content:center; background: var(--ink);
       color: var(--cyan); font-size: 13px; letter-spacing: 0.3em; transition: opacity 0.5s; }
     #loading.hidden { opacity: 0; pointer-events: none; }
+
+    /* ---- proximity FX (stagnation grey / current vignette) ---- */
+    #grey { position: fixed; inset: 0; z-index: 18; pointer-events: none;
+      background: #0a0e12; opacity: 0; transition: opacity 0.4s; mix-blend-mode: saturation; }
+    #vortexFx { position: fixed; inset: 0; z-index: 18; pointer-events: none;
+      background: radial-gradient(ellipse at center, transparent 38%, rgba(150,60,255,0.5) 100%);
+      opacity: 0; transition: opacity 0.3s; mix-blend-mode: screen; }
+
+    /* ---- cinematic narration ---- */
+    #narration { position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%);
+      z-index: 15; max-width: min(840px, 86vw); text-align: center; pointer-events: none;
+      font-size: 19px; line-height: 1.65; letter-spacing: 0.03em; color: #eef7ff;
+      font-weight: 400; opacity: 0;
+      text-shadow: 0 2px 26px rgba(0,0,0,0.95), 0 0 16px rgba(0,0,0,0.85); }
+    #narration:not(.show) { opacity: 0 !important; }
+    #narration::after { content: '▌'; margin-left: 3px; opacity: 0.55;
+      animation: caret 1s steps(1) infinite; }
+    @keyframes caret { 50% { opacity: 0; } }
+
+    /* ---- objective tracker ---- */
+    #objective { position: fixed; top: 96px; left: 28px; z-index: 12; pointer-events: none;
+      opacity: 0; transform: translateY(-4px); transition: opacity 0.5s ease, transform 0.5s ease; }
+    #objective.show { opacity: 1; transform: none; }
+    #objective .otag { font-size: 10px; letter-spacing: 0.25em; opacity: 0.5; text-transform: uppercase; }
+    #objText { font-size: 13px; color: #eaf6ff; margin-top: 5px; max-width: 320px;
+      border-left: 2px solid rgba(79,233,255,0.55); padding-left: 10px; line-height: 1.5; }
+
+    /* ---- waypoints ---- */
+    #waypoints { position: fixed; inset: 0; z-index: 12; pointer-events: none; }
+    .wp { position: absolute; transform: translate(-50%, -50%); text-align: center;
+      font-size: 11px; letter-spacing: 0.12em; white-space: nowrap;
+      text-shadow: 0 0 10px rgba(0,0,0,0.9); }
+    .wp .wpdot { font-size: 15px; line-height: 1; }
+    .wp .wptag { display: block; margin-top: 3px; }
+    .wp .wpdist { display: block; font-size: 10px; opacity: 0.6; margin-top: 1px; }
+
+    /* ---- title card ---- */
+    #titlecard { position: fixed; inset: 0; z-index: 28; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; text-align: center; pointer-events: none;
+      opacity: 0; transition: opacity 0.9s ease; }
+    #titlecard.show { opacity: 1; }
+    #titlecard .tnum { font-size: 13px; letter-spacing: 0.6em; color: var(--cyan);
+      opacity: 0.85; margin-bottom: 18px; min-height: 16px; }
+    #titlecard .tko { font-size: 58px; font-weight: 700; letter-spacing: 0.16em; color: #eaf6ff;
+      text-shadow: 0 0 50px rgba(79,233,255,0.45); }
+    #titlecard .ten { font-size: 13px; letter-spacing: 0.5em; opacity: 0.45; margin-top: 18px; }
+    #titlecard .tbar { width: 240px; height: 1px; margin-top: 26px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent); opacity: 0.5; }
+
+    /* ---- ending overlay ---- */
+    #ending .title { color: #ffd27f; text-shadow: 0 0 50px rgba(255,210,127,0.5); }
+    #ending .score { margin-top: 26px; font-size: 16px; line-height: 2.0; }
+    #ending .score b { color: var(--cyan); font-size: 24px; }
+
+    /* ---- audio toggle chip ---- */
+    #audioChip { position: fixed; bottom: 26px; left: 28px; z-index: 12;
+      font-size: 11px; letter-spacing: 0.1em; opacity: 0.5; pointer-events: none; }
   </style>
 
   <script type="importmap">
@@ -95,7 +152,24 @@
 </head>
 <body>
   <div id="app"></div>
+  <div id="grey"></div>
+  <div id="vortexFx"></div>
   <div id="vignette"></div>
+
+  <!-- narrative -->
+  <div id="objective" class="hud">
+    <div class="otag">Objective</div>
+    <div id="objText"></div>
+  </div>
+  <div id="waypoints"></div>
+  <div id="narration"></div>
+  <div id="titlecard">
+    <div class="tnum" id="titleNum"></div>
+    <div class="tko" id="titleKo"></div>
+    <div class="ten" id="titleEn"></div>
+    <div class="tbar"></div>
+  </div>
+  <div id="audioChip" class="hud">♪ <kbd>M</kbd> 음소거</div>
 
   <!-- HUD -->
   <div id="signalWrap" class="hud">
@@ -121,12 +195,14 @@
   <div id="start" class="overlay">
     <div class="title">DRIFT<small>정 보 의 &nbsp; 바 다</small></div>
     <div class="sub">
-      당신은 끝없는 정보의 바다를 표류합니다.<br/>
-      시그널은 시간과 함께 사라집니다. 빛나는 <span style="color:var(--amber)">데이터 코어</span>를 모아<br/>
-      신호를 유지하고, 최대한 멀리 헤쳐 나가세요.<br/><br/>
-      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · <kbd>SPACE</kbd>/<kbd>SHIFT</kbd> 고도 · 마우스로 시선
+      어제까지, 정보의 바다는 평화로웠다.<br/>
+      그러나 오늘 — 외부의 힘이 모든 물길을 뒤흔든다.<br/>
+      육지로 도망칠 것인가, 흐름에 몸을 맡길 것인가.<br/>
+      아니면, 그 너머의 무언가를 준비할 것인가.<br/><br/>
+      <span style="opacity:.6">빛나는 <span style="color:var(--amber)">데이터 코어</span>로 신호를 유지하며 살아남으세요.</span><br/><br/>
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · <kbd>SPACE</kbd>/<kbd>SHIFT</kbd> 고도 · 마우스 시선 · <kbd>M</kbd> 음소거
     </div>
-    <div class="cta">▸ 클릭하여 진입</div>
+    <div class="cta">▸ 클릭하여 표류 시작</div>
   </div>
 
   <div id="gameover" class="overlay hidden">
@@ -136,6 +212,15 @@
       <span style="opacity:.7;font-size:14px">코어 <span id="finalCores">0</span>개 회수 · <span id="finalTime">00:00</span> 생존</span>
     </div>
     <div class="cta" id="restart" style="pointer-events:auto;cursor:pointer;margin-top:40px">▸ 다시 표류하기</div>
+  </div>
+
+  <div id="ending" class="overlay hidden">
+    <div class="title">NEW ERA<small>새 로 운 &nbsp; 시 대</small></div>
+    <div class="score">
+      선택이 아니라, 준비가 길이었다.<br/>
+      <span style="opacity:.75;font-size:14px">표류 거리 <b id="endDist">0</b> · 씨앗 <span id="endSeeds">0</span> · 생존 <span id="endTime">00:00</span></span>
+    </div>
+    <div class="cta" id="replay" style="pointer-events:auto;cursor:pointer;margin-top:40px">▸ 다시 표류하기</div>
   </div>
 
   <div id="loading">L O A D I N G &nbsp; T H E &nbsp; S E A . . .</div>

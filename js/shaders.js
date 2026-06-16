@@ -6,6 +6,7 @@
  * ------------------------------------------------------------------ */
 export const seaVertex = /* glsl */`
   uniform float uTime;
+  uniform float uAgitation;   // 0 = calm swell, >1 = violent storm chop
   varying float vElevation;
   varying vec3  vWorldPos;
   varying float vFogDepth;
@@ -16,7 +17,11 @@ export const seaVertex = /* glsl */`
     e += sin(p.y * 0.025 - uTime * 0.50) * 2.6;
     e += sin((p.x + p.y) * 0.013 + uTime * 0.40) * 3.8;
     e += sin(length(p) * 0.020 - uTime * 0.85) * 1.6;
-    return e;
+    // high-frequency chop that only appears as the sea is agitated
+    e += sin(p.x * 0.060 - uTime * 2.2) * 2.0 * uAgitation;
+    e += sin(p.y * 0.075 + uTime * 2.6) * 1.6 * uAgitation;
+    e += sin((p.x - p.y) * 0.050 + uTime * 3.0) * 1.8 * uAgitation;
+    return e * (1.0 + uAgitation * 0.7);
   }
 
   void main() {
@@ -37,6 +42,7 @@ export const seaVertex = /* glsl */`
 export const seaFragment = /* glsl */`
   precision highp float;
   uniform float uTime;
+  uniform float uAgitation;
   uniform vec3  uColorDeep;
   uniform vec3  uColorShallow;
   uniform vec3  uLineColor;
@@ -59,13 +65,17 @@ export const seaFragment = /* glsl */`
     vec3 base = mix(uColorDeep, uColorShallow, h);
 
     vec2 wp = vWorldPos.xz;
-    float g1 = gridLine(wp + vec2(0.0, uTime * 3.0), 0.012);
-    float g2 = gridLine(wp * 0.5 - vec2(uTime * 1.5, 0.0), 0.012) * 0.5;
+    // grid scrolls faster the more agitated the sea
+    float spd = 3.0 + uAgitation * 6.0;
+    float g1 = gridLine(wp + vec2(0.0, uTime * spd), 0.012);
+    float g2 = gridLine(wp * 0.5 - vec2(uTime * spd * 0.5, 0.0), 0.012) * 0.5;
+    // flicker the lines during a storm, like glitching data
+    float flick = 1.0 + uAgitation * 0.6 * sin(wp.x * 0.5 + wp.y * 0.4 + uTime * 22.0);
 
-    vec3 col = base + uLineColor * (g1 + g2) * 1.4;
+    vec3 col = base + uLineColor * (g1 + g2) * 1.4 * flick;
 
     // radial scan pulse rippling out from origin
-    float pulse = sin(length(wp) * 0.018 - uTime * 1.6) * 0.5 + 0.5;
+    float pulse = sin(length(wp) * 0.018 - uTime * (1.6 + uAgitation * 2.0)) * 0.5 + 0.5;
     col += uLineColor * pow(pulse, 5.0) * 0.5;
 
     // crest highlight
@@ -154,5 +164,52 @@ export const moteFragment = /* glsl */`
     a *= a;
     // additive blend: fade toward black in fog so distant motes vanish
     gl_FragColor = vec4(vColor * a * (1.0 - vFogFactor), 1.0);
+  }
+`;
+
+/* ------------------------------------------------------------------ *
+ *  AI CURRENTS — a vast cyclonic field of data streaming around the
+ *  origin. Intensity ramps up as the external force takes hold.
+ * ------------------------------------------------------------------ */
+export const currentVertex = /* glsl */`
+  uniform float uTime;
+  uniform float uIntensity;
+  uniform float uPixelRatio;
+  uniform float uFogDensity;
+  attribute float aAngle;
+  attribute float aRadius;
+  attribute float aY;
+  attribute float aSeed;
+  varying float vFog;
+  varying float vSeed;
+  void main() {
+    // inner rings sweep faster — a swirling vortex of the whole sea
+    float ang = aAngle + uTime * (0.05 + 26.0 / (aRadius + 70.0)) * (0.4 + uIntensity);
+    float rad = aRadius + sin(uTime * 0.5 + aSeed * 6.28) * 22.0;
+    vec3 pos = vec3(cos(ang) * rad, aY + sin(uTime * 0.6 + aSeed * 9.0) * 14.0, sin(ang) * rad);
+
+    vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+    float depth = -mv.z;
+    float f = depth * uFogDensity;
+    vFog = clamp(1.0 - exp(-f * f), 0.0, 1.0);
+    vSeed = aSeed;
+    gl_PointSize = (1.4 + aSeed * 2.6) * uPixelRatio * (240.0 / depth) * (0.35 + uIntensity);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+export const currentFragment = /* glsl */`
+  precision highp float;
+  uniform float uIntensity;
+  uniform vec3  uColorA;
+  uniform vec3  uColorB;
+  varying float vFog;
+  varying float vSeed;
+  void main() {
+    float d = length(gl_PointCoord - 0.5);
+    float a = smoothstep(0.5, 0.0, d);
+    a *= a;
+    vec3 c = mix(uColorA, uColorB, vSeed);
+    gl_FragColor = vec4(c * a * uIntensity * (1.0 - vFog), 1.0);
   }
 `;

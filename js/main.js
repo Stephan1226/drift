@@ -1,5 +1,6 @@
 // DRIFT — 정보의 바다
-// Entry point: renderer, post-processing, world assembly, survival loop.
+// Entry point: renderer, post-processing, world, the narrative campaign, and
+// the adaptive soundtrack are all wired together in the render loop here.
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -14,6 +15,12 @@ import {
   createSky, createSea, createMotes, createMonoliths,
   createCoreField, placeCoreAround,
 } from './world.js';
+import {
+  createCurrents, createVortex, createLand,
+  createSeedField, createArk, scatterSeeds, LANDMARKS,
+} from './elements.js';
+import { GameAudio } from './audio.js';
+import { Story } from './story.js';
 
 /* ----------------------------- renderer ----------------------------- */
 const canvasHost = document.getElementById('app');
@@ -31,7 +38,6 @@ scene.fog = new THREE.FogExp2(PALETTE.fog, FOG_DENSITY);
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.5, 12000);
 camera.position.set(0, 60, 320);
 
-// lights (kept minimal — emissive + bloom do the heavy lifting)
 scene.add(new THREE.HemisphereLight(0x294a66, 0x010308, 0.9));
 const key = new THREE.DirectionalLight(0x9fd4ff, 0.7);
 key.position.set(120, 300, 80);
@@ -46,78 +52,140 @@ const coreField = createCoreField();
 scene.add(sky, sea, motes, monoliths, coreField);
 const cores = coreField.userData.cores;
 
+// narrative elements (hidden until the story reveals them)
+const currents = createCurrents();
+const vortex = createVortex(); vortex.visible = false;
+const land = createLand(); land.visible = false;
+const seedField = createSeedField(); const seeds = seedField.userData.seeds;
+const ark = createArk();
+scene.add(currents, vortex, land, seedField, ark);
+
 /* ------------------------- post-processing -------------------------- */
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.7,   // strength
-  0.6,   // radius
-  0.22,  // threshold (only bright emissive blooms — keeps midtones deep)
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.7, 0.6, 0.22,
 );
 const BLOOM_BASE = 0.7;
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
+/* ----------------------- atmosphere transitions --------------------- */
+const PALETTES = {
+  calm:  { seaDeep: 0x02080f, seaShallow: 0x0a3b58, seaLine: 0x39d8ff, fog: 0x05101c, skyTop: 0x02040c, skyHorizon: 0x07263a, skyGlow: 0x0d4c63 },
+  storm: { seaDeep: 0x0a0512, seaShallow: 0x3a1048, seaLine: 0xb84fff, fog: 0x120618, skyTop: 0x08020e, skyHorizon: 0x2a0a32, skyGlow: 0x5a1d6b },
+  dawn:  { seaDeep: 0x06121a, seaShallow: 0x1f5a6e, seaLine: 0x7fffe0, fog: 0x141f29, skyTop: 0x0a1622, skyHorizon: 0x3a2630, skyGlow: 0xffc88a },
+};
+const ATMOS_KEYS = ['seaDeep', 'seaShallow', 'seaLine', 'fog', 'skyTop', 'skyHorizon', 'skyGlow'];
+const atmos = {
+  cur: {}, target: {},
+  init() { for (const k of ATMOS_KEYS) { this.cur[k] = new THREE.Color(PALETTES.calm[k]); this.target[k] = new THREE.Color(PALETTES.calm[k]); } },
+  to(name) { const p = PALETTES[name]; if (!p) return; for (const k of ATMOS_KEYS) this.target[k].setHex(p[k]); },
+  snap(name) { const p = PALETTES[name]; if (!p) return; for (const k of ATMOS_KEYS) { this.cur[k].setHex(p[k]); this.target[k].setHex(p[k]); } },
+  update(dt) {
+    const s = 1 - Math.exp(-dt * 0.8);
+    for (const k of ATMOS_KEYS) this.cur[k].lerp(this.target[k], s);
+    sea.uniforms.uColorDeep.value.copy(this.cur.seaDeep);
+    sea.uniforms.uColorShallow.value.copy(this.cur.seaShallow);
+    sea.uniforms.uLineColor.value.copy(this.cur.seaLine);
+    sea.uniforms.uFogColor.value.copy(this.cur.fog);
+    scene.fog.color.copy(this.cur.fog);
+    sky.uniforms.uTop.value.copy(this.cur.skyTop);
+    sky.uniforms.uHorizon.value.copy(this.cur.skyHorizon);
+    sky.uniforms.uGlow.value.copy(this.cur.skyGlow);
+  },
+};
+atmos.init();
+
+const fxState = { agitation: { cur: 0, target: 0 }, currents: { cur: 0, target: 0 } };
+
 /* ----------------------------- controls ----------------------------- */
 const player = new FlyController(camera, renderer.domElement);
 
+/* ----------------------------- audio + story ------------------------ */
+const audio = new GameAudio();
+const fx = {
+  agitation: (v) => { fxState.agitation.target = v; },
+  currents: (v) => { fxState.currents.target = v; },
+  palette: (name) => atmos.to(name),
+  reveal: (what) => {
+    if (what === 'crossroads') { vortex.visible = true; land.visible = true; }
+    if (what === 'newera') { ark.visible = true; scatterSeeds(seedField); }
+  },
+  setArkCharge: (c) => ark.setCharge(c),
+};
+const story = new Story({ audio, fx });
+
 /* --------------------------- survival state ------------------------- */
 const START_POS = new THREE.Vector3(0, 60, 320);
-const DECAY = 1.9;            // integrity lost per second
-const CORE_RESTORE = 30;      // integrity gained per core
-const COLLECT_DIST = 16;      // pickup radius
+const ORIGIN = new THREE.Vector3(0, 0, 0);
+const DECAY = 1.9;
+const CORE_RESTORE = 28;
+const COLLECT_DIST = 16;
+const SEED_DIST = 22;
 
-const state = {
-  integrity: 100,
-  distance: 0,
-  cores: 0,
-  time: 0,
-  running: false,
-  over: false,
-};
-
+const state = { integrity: 100, distance: 0, cores: 0, time: 0, running: false, over: false };
 const hud = new HUD();
 
 /* --------------------------- UI elements ---------------------------- */
 const startOverlay = document.getElementById('start');
 const gameoverOverlay = document.getElementById('gameover');
+const endingOverlay = document.getElementById('ending');
 const loadingEl = document.getElementById('loading');
-const restartBtn = document.getElementById('restart');
+const greyEl = document.getElementById('grey');
+const vortexFxEl = document.getElementById('vortexFx');
+const audioChip = document.getElementById('audioChip');
 
 function beginGame() {
-  resetGame();
+  audio.start();
+  worldReset();
+  state.integrity = 100; state.distance = 0; state.cores = 0; state.time = 0;
+  state.over = false; state.running = true;
+  player.reset(START_POS.clone());
+  story.begin();
   startOverlay.classList.add('hidden');
   gameoverOverlay.classList.add('hidden');
+  endingOverlay.classList.add('hidden');
   player.requestLock();
 }
 
-function resetGame() {
-  state.integrity = 100;
-  state.distance = 0;
-  state.cores = 0;
-  state.time = 0;
-  state.over = false;
-  state.running = true;
-  player.reset(START_POS.clone());
-  cores.forEach((c) => placeCoreAround(c, new THREE.Vector3(0, 0, 0), 250, 1700));
+function worldReset() {
+  vortex.visible = false; land.visible = false; ark.visible = false; ark.setCharge(0);
+  seeds.forEach((s) => { s.visible = false; });
+  cores.forEach((c) => placeCoreAround(c, ORIGIN, 250, 1700));
+  fxState.agitation.cur = fxState.agitation.target = 0;
+  fxState.currents.cur = fxState.currents.target = 0;
+  atmos.snap('calm');
+  greyEl.style.opacity = '0'; vortexFxEl.style.opacity = '0';
 }
 
 function endGame() {
-  state.over = true;
-  state.running = false;
+  state.over = true; state.running = false;
   document.exitPointerLock();
   document.getElementById('finalDist').textContent = Math.floor(state.distance).toLocaleString();
   document.getElementById('finalCores').textContent = state.cores;
-  document.getElementById('finalTime').textContent =
-    `${String(Math.floor(state.time / 60)).padStart(2, '0')}:${String(Math.floor(state.time % 60)).padStart(2, '0')}`;
+  document.getElementById('finalTime').textContent = fmt(state.time);
   gameoverOverlay.classList.remove('hidden');
 }
 
-startOverlay.addEventListener('click', beginGame);
-restartBtn.addEventListener('click', (e) => { e.stopPropagation(); beginGame(); });
+function showEnding() {
+  state.over = true; state.running = false;
+  document.exitPointerLock();
+  document.getElementById('endDist').textContent = Math.floor(state.distance).toLocaleString();
+  document.getElementById('endSeeds').textContent = story.seeds;
+  document.getElementById('endTime').textContent = fmt(state.time);
+  endingOverlay.classList.remove('hidden');
+}
+story.onComplete = showEnding;
 
-// pause on losing pointer lock (unless the run has already ended)
+function fmt(s) {
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
+
+startOverlay.addEventListener('click', beginGame);
+document.getElementById('restart').addEventListener('click', (e) => { e.stopPropagation(); beginGame(); });
+document.getElementById('replay').addEventListener('click', (e) => { e.stopPropagation(); beginGame(); });
+
 player.onUnlock = () => {
   if (state.running && !state.over) {
     state.running = false;
@@ -125,9 +193,16 @@ player.onUnlock = () => {
     startOverlay.querySelector('.cta').textContent = '▸ 클릭하여 계속';
   }
 };
-player.onLock = () => {
-  if (!state.over) state.running = true;
-};
+player.onLock = () => { if (!state.over) state.running = true; };
+
+// mute toggle
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyM') {
+    const on = audio.toggleMute();
+    audioChip.textContent = on ? '♪ M 음소거' : '♪ M 소리 켜기 (음소거됨)';
+    audioChip.style.opacity = on ? '0.5' : '0.85';
+  }
+});
 
 /* ----------------------------- collection --------------------------- */
 const flash = { v: 0 };
@@ -139,11 +214,66 @@ function checkCollection() {
       c.visible = false;
       state.cores += 1;
       state.integrity = Math.min(100, state.integrity + CORE_RESTORE);
-      flash.v = 1;
-      // respawn ahead of the player so there is always somewhere to drift
+      flash.v = 1; audio.collect(); story.onCore();
       placeCoreAround(c, p, 320, 900);
     }
   }
+  if (story.act === 'act3') {
+    for (const s of seeds) {
+      if (!s.visible) continue;
+      if (p.distanceTo(s.position) < SEED_DIST) {
+        s.visible = false;
+        flash.v = 1; audio.seed(); story.onSeed();
+      }
+    }
+  }
+}
+
+/* ----------------------------- waypoints ---------------------------- */
+const wpHost = document.getElementById('waypoints');
+const wpEls = [];
+for (let i = 0; i < 3; i++) {
+  const el = document.createElement('div');
+  el.className = 'wp';
+  el.innerHTML = '<div class="wpdot">◈</div><div class="wptag"></div><div class="wpdist"></div>';
+  el.style.display = 'none';
+  wpHost.appendChild(el);
+  wpEls.push(el);
+}
+const wpVec = new THREE.Vector3();
+function updateWaypoints() {
+  const W = window.innerWidth, H = window.innerHeight, margin = 64;
+  story.waypoints.forEach((wp, i) => {
+    if (i >= wpEls.length) return;
+    const el = wpEls[i];
+    el.style.display = 'block';
+    el.style.color = wp.color;
+    wpVec.copy(wp.pos); wpVec.y += 130;
+    wpVec.project(camera);
+    const behind = wpVec.z > 1;
+    let x = (wpVec.x * 0.5 + 0.5) * W;
+    let y = (-wpVec.y * 0.5 + 0.5) * H;
+    const dot = el.querySelector('.wpdot');
+    const offscreen = behind || x < margin || x > W - margin || y < margin || y > H - margin;
+    if (offscreen) {
+      let dx = x - W / 2, dy = y - H / 2;
+      if (behind) { dx = -dx; dy = -dy; }
+      const ang = Math.atan2(dy, dx);
+      x = W / 2 + Math.cos(ang) * (W / 2 - margin);
+      y = H / 2 + Math.sin(ang) * (H / 2 - margin);
+      dot.textContent = '➤';
+      dot.style.transform = `rotate(${ang}rad)`;
+      dot.style.display = 'inline-block';
+    } else {
+      dot.textContent = '◈';
+      dot.style.transform = 'none';
+    }
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.querySelector('.wptag').textContent = wp.tag;
+    el.querySelector('.wpdist').textContent = Math.round(camera.position.distanceTo(wp.pos)).toLocaleString();
+  });
+  for (let i = story.waypoints.length; i < wpEls.length; i++) wpEls[i].style.display = 'none';
 }
 
 /* ------------------------------- loop ------------------------------- */
@@ -156,30 +286,39 @@ function animate() {
   const t = clock.elapsedTime;
 
   player.update(dt);
-  sea.update(t);
-  motes.update(t);
-  coreField.update(t);
-  sky.position.copy(camera.position); // keep horizon centred on the camera
+  sea.update(t); motes.update(t); coreField.update(t);
+  currents.update(t); vortex.update(t); land.update(t); seedField.update(t); ark.update(t);
+  sky.position.copy(camera.position);
+
+  // smooth world-state transitions
+  const ls = 1 - Math.exp(-dt * 0.9);
+  fxState.agitation.cur += (fxState.agitation.target - fxState.agitation.cur) * ls;
+  fxState.currents.cur += (fxState.currents.target - fxState.currents.cur) * ls;
+  sea.uniforms.uAgitation.value = fxState.agitation.cur;
+  currents.uniforms.uIntensity.value = fxState.currents.cur;
+  atmos.update(dt);
 
   if (state.running && !state.over) {
     state.time += dt;
-    state.integrity -= DECAY * dt;
+    story.update(dt, camera.position);
+    const drain = DECAY * story.decayMul + (story.decayMul > 0 ? DECAY * story.vortexProximity * 2.2 : 0);
+    state.integrity -= drain * dt;
     state.distance = player.distanceTravelled;
     checkCollection();
-    if (state.integrity <= 0) {
-      state.integrity = 0;
-      endGame();
-    }
+    if (state.integrity <= 0) { state.integrity = 0; endGame(); }
   }
 
-  // brief bloom flash on pickup
-  if (flash.v > 0) {
-    flash.v = Math.max(0, flash.v - dt * 2.5);
-    bloom.strength = BLOOM_BASE + flash.v * 0.9;
-  }
+  // proximity FX: land = stagnation (dim/desaturate), vortex = peril (violet)
+  greyEl.style.opacity = (story.landProximity * 0.85).toFixed(3);
+  vortexFxEl.style.opacity = (story.vortexProximity * 0.7).toFixed(3);
+  renderer.toneMappingExposure = 1.0 - story.landProximity * 0.42 + story.vortexProximity * 0.15;
+
+  if (flash.v > 0) flash.v = Math.max(0, flash.v - dt * 2.5);
+  bloom.strength = BLOOM_BASE * (1 - story.landProximity * 0.6) + story.vortexProximity * 0.3 + flash.v * 0.9;
 
   hud.update(state);
-  hud.drawRadar(player, cores);
+  hud.drawRadar(player, cores, story.act === 'act3' ? seeds : null);
+  updateWaypoints();
 
   composer.render();
 

@@ -38,7 +38,7 @@ export class HUD {
     this.vignette.style.opacity = (danger * pulse).toFixed(3);
   }
 
-  drawRadar(player, cores) {
+  drawRadar(player, cores, seeds) {
     const ctx = this.rctx;
     const W = this.radar.width, H = this.radar.height;
     const cx = W / 2, cy = H / 2, R = W / 2 - 6;
@@ -57,26 +57,29 @@ export class HUD {
     ctx.strokeStyle = 'rgba(79,233,255,0.10)';
     ctx.stroke();
 
-    // core blips, rotated so the player heading points "up"
+    // blips, rotated so the player heading points "up"
     const yaw = player.yaw;
     const sin = Math.sin(-yaw), cos = Math.cos(-yaw);
-    for (const c of cores) {
-      if (!c.visible) continue;
-      let dx = c.position.x - player.camera.position.x;
-      let dz = c.position.z - player.camera.position.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist > this.radarRange) continue;
-      // world -> radar: forward (-Z) maps to up
-      const rx =  dx * cos - dz * sin;
-      const rz =  dx * sin + dz * cos;
-      const px = cx + (rx / this.radarRange) * R;
-      const py = cy + (rz / this.radarRange) * R;
-      const a = 1 - dist / this.radarRange;
-      ctx.fillStyle = `rgba(255,207,122,${0.4 + a * 0.6})`;
-      ctx.beginPath();
-      ctx.arc(px, py, 3 + a * 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    const plot = (items, r, g, b) => {
+      for (const c of items) {
+        if (!c.visible) continue;
+        const dx = c.position.x - player.camera.position.x;
+        const dz = c.position.z - player.camera.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > this.radarRange) continue;
+        const rx = dx * cos - dz * sin;
+        const rz = dx * sin + dz * cos;
+        const px = cx + (rx / this.radarRange) * R;
+        const py = cy + (rz / this.radarRange) * R;
+        const a = 1 - dist / this.radarRange;
+        ctx.fillStyle = `rgba(${r},${g},${b},${0.4 + a * 0.6})`;
+        ctx.beginPath();
+        ctx.arc(px, py, 3 + a * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+    plot(cores, 255, 207, 122);
+    if (seeds) plot(seeds, 110, 255, 192);
 
     // player triangle at centre
     ctx.fillStyle = '#eaf6ff';
