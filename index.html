@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>DRIFT — 정보의 바다</title>
+  <style>
+    :root {
+      --cyan: #4fe9ff;
+      --amber: #ffcf7a;
+      --danger: #ff4d5e;
+      --ink: #04070f;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--ink); }
+    body {
+      font-family: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+      color: #cfe9ff;
+      cursor: default;
+      -webkit-font-smoothing: antialiased;
+    }
+    #app { position: fixed; inset: 0; }
+    canvas { display: block; }
+
+    /* ---- danger vignette ---- */
+    #vignette {
+      position: fixed; inset: 0; pointer-events: none; z-index: 20;
+      background: radial-gradient(ellipse at center,
+        rgba(0,0,0,0) 45%, rgba(255,40,60,0.55) 100%);
+      opacity: 0; transition: opacity 0.25s ease;
+      mix-blend-mode: screen;
+    }
+
+    /* ---- HUD ---- */
+    .hud { position: fixed; z-index: 10; pointer-events: none;
+      text-shadow: 0 0 12px rgba(0,0,0,0.9); letter-spacing: 0.08em; }
+    .label { font-size: 10px; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.25em; }
+
+    #signalWrap { top: 26px; left: 28px; }
+    #bar { width: 230px; height: 8px; margin-top: 7px;
+      border: 1px solid rgba(79,233,255,0.35); border-radius: 6px; overflow: hidden;
+      background: rgba(79,233,255,0.06); }
+    #barFill { height: 100%; width: 100%;
+      background: linear-gradient(90deg, #1aa6c8, var(--cyan));
+      box-shadow: 0 0 16px var(--cyan); transition: width 0.15s linear, background 0.4s; }
+    #signalPct { font-size: 13px; margin-top: 6px; opacity: 0.85; }
+
+    #stats { top: 26px; right: 28px; text-align: right; }
+    #stats .row { font-size: 13px; margin-bottom: 4px; }
+    #stats .big { font-size: 22px; color: var(--amber); text-shadow: 0 0 18px rgba(255,207,122,0.5); }
+    #stats b { color: #eaf6ff; font-weight: 600; }
+
+    #radar { position: fixed; bottom: 26px; right: 28px; z-index: 10;
+      width: 150px; height: 150px; opacity: 0.85; pointer-events: none; }
+
+    #hint { bottom: 30px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; opacity: 0.5; text-align: center; line-height: 1.7; }
+    #hint kbd { display: inline-block; padding: 1px 7px; margin: 0 1px;
+      border: 1px solid rgba(207,233,255,0.3); border-radius: 4px; font-size: 11px; }
+
+    /* ---- overlays ---- */
+    .overlay { position: fixed; inset: 0; z-index: 30; display: flex;
+      flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; background: radial-gradient(ellipse at center, rgba(4,7,15,0.55), rgba(4,7,15,0.92));
+      backdrop-filter: blur(3px); transition: opacity 0.6s ease; }
+    .overlay.hidden { opacity: 0; pointer-events: none; }
+    .title { font-size: 56px; font-weight: 700; letter-spacing: 0.18em;
+      color: #eaf6ff; text-shadow: 0 0 40px rgba(79,233,255,0.55); }
+    .title small { display:block; font-size: 14px; letter-spacing:0.5em; opacity:0.5;
+      margin-top: 14px; font-weight: 400; }
+    .sub { margin-top: 28px; font-size: 14px; line-height: 2.1; opacity: 0.7; max-width: 520px; }
+    .sub kbd { display:inline-block; padding: 2px 8px; margin: 0 2px;
+      border: 1px solid rgba(207,233,255,0.35); border-radius: 5px; }
+    .cta { margin-top: 36px; font-size: 14px; letter-spacing: 0.3em;
+      color: var(--cyan); text-transform: uppercase; animation: pulse 1.8s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:0.45} 50%{opacity:1} }
+    #gameover .title { color: var(--danger); text-shadow: 0 0 40px rgba(255,77,94,0.5); }
+    #gameover .score { margin-top: 26px; font-size: 16px; line-height: 2.0; }
+    #gameover .score b { color: var(--amber); font-size: 26px; }
+
+    #loading { position: fixed; inset: 0; z-index: 40; display:flex;
+      align-items:center; justify-content:center; background: var(--ink);
+      color: var(--cyan); font-size: 13px; letter-spacing: 0.3em; transition: opacity 0.5s; }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="vignette"></div>
+
+  <!-- HUD -->
+  <div id="signalWrap" class="hud">
+    <div class="label">Signal Integrity</div>
+    <div id="bar"><div id="barFill"></div></div>
+    <div id="signalPct">100%</div>
+  </div>
+
+  <div id="stats" class="hud">
+    <div class="row big"><b id="distance">0</b> <span style="font-size:12px;opacity:.6">DRIFT</span></div>
+    <div class="row">CORES&nbsp; <b id="cores">0</b></div>
+    <div class="row">TIME&nbsp;&nbsp; <b id="time">00:00</b></div>
+  </div>
+
+  <canvas id="radar" width="300" height="300"></canvas>
+
+  <div id="hint" class="hud">
+    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 &nbsp;·&nbsp;
+    <kbd>SPACE</kbd>/<kbd>SHIFT</kbd> 상승·하강 &nbsp;·&nbsp; 마우스 시선 &nbsp;·&nbsp; <kbd>ESC</kbd> 일시정지
+  </div>
+
+  <!-- Overlays -->
+  <div id="start" class="overlay">
+    <div class="title">DRIFT<small>정 보 의 &nbsp; 바 다</small></div>
+    <div class="sub">
+      당신은 끝없는 정보의 바다를 표류합니다.<br/>
+      시그널은 시간과 함께 사라집니다. 빛나는 <span style="color:var(--amber)">데이터 코어</span>를 모아<br/>
+      신호를 유지하고, 최대한 멀리 헤쳐 나가세요.<br/><br/>
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · <kbd>SPACE</kbd>/<kbd>SHIFT</kbd> 고도 · 마우스로 시선
+    </div>
+    <div class="cta">▸ 클릭하여 진입</div>
+  </div>
+
+  <div id="gameover" class="overlay hidden">
+    <div class="title">SIGNAL LOST<small>신 호 두 절</small></div>
+    <div class="score">
+      당신은 <b id="finalDist">0</b> 만큼 표류했습니다.<br/>
+      <span style="opacity:.7;font-size:14px">코어 <span id="finalCores">0</span>개 회수 · <span id="finalTime">00:00</span> 생존</span>
+    </div>
+    <div class="cta" id="restart" style="pointer-events:auto;cursor:pointer;margin-top:40px">▸ 다시 표류하기</div>
+  </div>
+
+  <div id="loading">L O A D I N G &nbsp; T H E &nbsp; S E A . . .</div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
