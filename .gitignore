@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# editor / OS cruft
+*.swp
+*~
+Thumbs.db
+
+# node (if ever used)
+node_modules/
