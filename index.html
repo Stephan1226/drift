@@ -139,6 +139,57 @@
     /* ---- audio toggle chip ---- */
     #audioChip { position: fixed; bottom: 26px; left: 28px; z-index: 12;
       font-size: 11px; letter-spacing: 0.1em; opacity: 0.5; pointer-events: none; }
+    #menuHint { position: fixed; bottom: 46px; left: 28px; z-index: 12;
+      font-size: 11px; letter-spacing: 0.1em; opacity: 0.5; pointer-events: none; }
+    #menuHint kbd { display:inline-block; padding:1px 6px; border:1px solid rgba(207,233,255,0.3);
+      border-radius:4px; font-size:10px; }
+
+    /* ---- god-mode chip (bottom-left chip stack) ---- */
+    #godChip { position: fixed; bottom: 66px; left: 28px; z-index: 12; display: none;
+      font-size: 11px; letter-spacing: 0.18em; color: #7affc4; pointer-events: none;
+      text-shadow: 0 0 12px rgba(122,255,196,0.5); }
+    #godChip.on { display: block; }
+
+    /* ---- start-screen god toggle ---- */
+    .godtoggle { pointer-events: auto; cursor: pointer; user-select: none;
+      display: inline-flex; align-items: center; gap: 10px; margin-top: 30px;
+      padding: 9px 18px; border: 1px solid rgba(122,255,196,0.35); border-radius: 999px;
+      font-size: 12px; letter-spacing: 0.12em; color: #bfe9d6; transition: all 0.2s; }
+    .godtoggle:hover { border-color: rgba(122,255,196,0.7); }
+    .godtoggle .dot { width: 9px; height: 9px; border-radius: 50%;
+      background: #33424a; box-shadow: 0 0 0 rgba(122,255,196,0); transition: all 0.2s; }
+    .godtoggle.on { border-color: rgba(122,255,196,0.8); color: #d6ffe9; }
+    .godtoggle.on .dot { background: #7affc4; box-shadow: 0 0 12px rgba(122,255,196,0.9); }
+
+    /* ---- utility menu (TAB) ---- */
+    #devpanel { position: fixed; inset: 0; z-index: 35; display: none;
+      align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(4,7,15,0.35), rgba(4,7,15,0.7)); }
+    #devpanel.show { display: flex; }
+    #devpanel .card { pointer-events: auto; min-width: 320px; padding: 26px 30px;
+      background: rgba(6,12,20,0.82); border: 1px solid rgba(79,233,255,0.25);
+      border-radius: 14px; backdrop-filter: blur(6px); text-align: center; }
+    #devpanel h3 { font-size: 13px; letter-spacing: 0.3em; color: var(--cyan);
+      opacity: 0.85; margin-bottom: 4px; text-transform: uppercase; }
+    #devpanel .dsub { font-size: 11px; opacity: 0.45; margin-bottom: 20px; letter-spacing: 0.1em; }
+    #devpanel .grp { margin: 14px 0; }
+    #devpanel .glabel { font-size: 10px; letter-spacing: 0.2em; opacity: 0.5;
+      text-transform: uppercase; margin-bottom: 8px; }
+    #devpanel .row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .dbtn { pointer-events: auto; cursor: pointer; user-select: none;
+      padding: 9px 14px; border: 1px solid rgba(207,233,255,0.25); border-radius: 8px;
+      font-size: 12px; letter-spacing: 0.05em; color: #cfe9ff; background: rgba(255,255,255,0.02);
+      transition: all 0.15s; font-family: inherit; }
+    .dbtn:hover { border-color: rgba(79,233,255,0.7); color: #fff; background: rgba(79,233,255,0.08); }
+    .dbtn.land { border-color: rgba(255,176,96,0.4); color: #ffcf9a; }
+    .dbtn.land:hover { border-color: rgba(255,176,96,0.9); background: rgba(255,176,96,0.1); }
+    .dbtn.vortex { border-color: rgba(196,107,255,0.4); color: #d8b3ff; }
+    .dbtn.vortex:hover { border-color: rgba(196,107,255,0.9); background: rgba(196,107,255,0.1); }
+    .dbtn.skip { border-color: rgba(255,77,94,0.4); color: #ffb0b8; }
+    .dbtn.skip:hover { border-color: rgba(255,77,94,0.9); background: rgba(255,77,94,0.1); }
+    .dbtn.god.on { border-color: rgba(122,255,196,0.9); color: #d6ffe9; background: rgba(122,255,196,0.1); }
+    #devpanel .resume { margin-top: 22px; font-size: 13px; letter-spacing: 0.3em;
+      color: var(--cyan); text-transform: uppercase; }
   </style>
 
   <script type="importmap">
@@ -170,6 +221,8 @@
     <div class="tbar"></div>
   </div>
   <div id="audioChip" class="hud">♪ <kbd>M</kbd> 음소거</div>
+  <div id="menuHint" class="hud"><kbd>TAB</kbd> 도구 (순간이동 · 스킵 · 무적)</div>
+  <div id="godChip">∞ 무적 모드</div>
 
   <!-- HUD -->
   <div id="signalWrap" class="hud">
@@ -203,6 +256,7 @@
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · <kbd>SPACE</kbd>/<kbd>SHIFT</kbd> 고도 · 마우스 시선 · <kbd>M</kbd> 음소거
     </div>
     <div class="cta">▸ 클릭하여 표류 시작</div>
+    <div class="godtoggle" id="godToggleStart"><span class="dot"></span><span class="gtxt">신호 감소 끄기 (무적 모드)</span></div>
   </div>
 
   <div id="gameover" class="overlay hidden">
@@ -221,6 +275,33 @@
       <span style="opacity:.75;font-size:14px">표류 거리 <b id="endDist">0</b> · 씨앗 <span id="endSeeds">0</span> · 생존 <span id="endTime">00:00</span></span>
     </div>
     <div class="cta" id="replay" style="pointer-events:auto;cursor:pointer;margin-top:40px">▸ 다시 표류하기</div>
+  </div>
+
+  <div id="devpanel">
+    <div class="card">
+      <h3>도구</h3>
+      <div class="dsub">UTILITY · <kbd style="font-size:10px">TAB</kbd> 닫기</div>
+
+      <div class="grp">
+        <div class="glabel">순간이동</div>
+        <div class="row">
+          <button class="dbtn land" id="tpLand">육지</button>
+          <button class="dbtn vortex" id="tpVortex">흐름 (폭풍)</button>
+          <button class="dbtn" id="tpArk">방주</button>
+          <button class="dbtn" id="tpStart">시작점</button>
+        </div>
+      </div>
+
+      <div class="grp">
+        <div class="glabel">진행</div>
+        <div class="row">
+          <button class="dbtn skip" id="skipBtn">현재 미션 스킵 ▸</button>
+          <button class="dbtn god" id="godBtn">신호 감소: 켜짐</button>
+        </div>
+      </div>
+
+      <div class="resume" id="resumeBtn" style="pointer-events:auto;cursor:pointer">▸ 계속하기</div>
+    </div>
   </div>
 
   <div id="loading">L O A D I N G &nbsp; T H E &nbsp; S E A . . .</div>

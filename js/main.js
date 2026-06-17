@@ -135,6 +135,10 @@ const loadingEl = document.getElementById('loading');
 const greyEl = document.getElementById('grey');
 const vortexFxEl = document.getElementById('vortexFx');
 const audioChip = document.getElementById('audioChip');
+const devpanel = document.getElementById('devpanel');
+const godChipEl = document.getElementById('godChip');
+let godMode = false;
+let menuOpen = false;
 
 function beginGame() {
   audio.start();
@@ -187,22 +191,86 @@ document.getElementById('restart').addEventListener('click', (e) => { e.stopProp
 document.getElementById('replay').addEventListener('click', (e) => { e.stopPropagation(); beginGame(); });
 
 player.onUnlock = () => {
-  if (state.running && !state.over) {
+  if (state.running && !state.over && !menuOpen) {
     state.running = false;
     startOverlay.classList.remove('hidden');
     startOverlay.querySelector('.cta').textContent = '▸ 클릭하여 계속';
   }
 };
-player.onLock = () => { if (!state.over) state.running = true; };
+player.onLock = () => { if (!state.over && !menuOpen) state.running = true; };
 
-// mute toggle
+// keyboard: mute (M) + utility menu (Tab)
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyM') {
     const on = audio.toggleMute();
     audioChip.textContent = on ? '♪ M 음소거' : '♪ M 소리 켜기 (음소거됨)';
     audioChip.style.opacity = on ? '0.5' : '0.85';
+  } else if (e.code === 'Tab') {
+    e.preventDefault();
+    if (menuOpen) { closeMenu(); return; }
+    const onMenuScreen = !startOverlay.classList.contains('hidden')
+      || !gameoverOverlay.classList.contains('hidden')
+      || !endingOverlay.classList.contains('hidden');
+    if (!state.over && !onMenuScreen) openMenu();
   }
 });
+
+/* ----------------------- god mode + utility menu -------------------- */
+function updateGodUI() {
+  godChipEl.classList.toggle('on', godMode);
+  const st = document.getElementById('godToggleStart');
+  st.classList.toggle('on', godMode);
+  st.querySelector('.gtxt').textContent = godMode ? '신호 감소 꺼짐 — 무적 모드 ✓' : '신호 감소 끄기 (무적 모드)';
+  const gb = document.getElementById('godBtn');
+  gb.classList.toggle('on', godMode);
+  gb.textContent = godMode ? '신호 감소: 꺼짐 (무적)' : '신호 감소: 켜짐';
+}
+function toggleGod() { godMode = !godMode; updateGodUI(); }
+document.getElementById('godToggleStart').addEventListener('click', (e) => { e.stopPropagation(); toggleGod(); });
+document.getElementById('godBtn').addEventListener('click', toggleGod);
+updateGodUI();
+
+function openMenu() {
+  menuOpen = true; state.running = false;
+  devpanel.classList.add('show');
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeMenu() {
+  menuOpen = false; devpanel.classList.remove('show');
+  if (!state.over) player.requestLock();
+}
+document.getElementById('resumeBtn').addEventListener('click', closeMenu);
+document.getElementById('skipBtn').addEventListener('click', () => story.skip());
+
+function teleport(which) {
+  let pos, look;
+  if (which === 'land') {
+    land.visible = true;
+    pos = new THREE.Vector3(LANDMARKS.LAND.x, 230, LANDMARKS.LAND.z + 520);
+    look = new THREE.Vector3(LANDMARKS.LAND.x, 70, LANDMARKS.LAND.z);
+  } else if (which === 'vortex') {
+    vortex.visible = true;
+    pos = new THREE.Vector3(LANDMARKS.VORTEX.x, 300, LANDMARKS.VORTEX.z + 580);
+    look = new THREE.Vector3(LANDMARKS.VORTEX.x, 260, LANDMARKS.VORTEX.z);
+  } else if (which === 'ark') {
+    ark.visible = true;
+    pos = new THREE.Vector3(0, 200, 460);
+    look = new THREE.Vector3(0, 90, 0);
+  } else {
+    pos = START_POS.clone();
+    look = new THREE.Vector3(0, 0, -300);
+  }
+  camera.position.copy(pos);
+  const dir = look.sub(pos);
+  player.yaw = Math.atan2(dir.x, dir.z);
+  player.pitch = Math.max(-1.2, Math.min(1.2, Math.asin(dir.y / dir.length())));
+  player.velocity.set(0, 0, 0);
+  player._lastPos.copy(camera.position);   // don't count the jump as drift
+}
+document.getElementById('tpLand').addEventListener('click', () => teleport('land'));
+document.getElementById('tpVortex').addEventListener('click', () => teleport('vortex'));
+document.getElementById('tpArk').addEventListener('click', () => teleport('ark'));
+document.getElementById('tpStart').addEventListener('click', () => teleport('start'));
 
 /* ----------------------------- collection --------------------------- */
 const flash = { v: 0 };
@@ -301,8 +369,12 @@ function animate() {
   if (state.running && !state.over) {
     state.time += dt;
     story.update(dt, camera.position);
-    const drain = DECAY * story.decayMul + (story.decayMul > 0 ? DECAY * story.vortexProximity * 2.2 : 0);
-    state.integrity -= drain * dt;
+    if (!godMode) {
+      const drain = DECAY * story.decayMul + (story.decayMul > 0 ? DECAY * story.vortexProximity * 2.2 : 0);
+      state.integrity -= drain * dt;
+    } else {
+      state.integrity = 100;
+    }
     state.distance = player.distanceTravelled;
     checkCollection();
     if (state.integrity <= 0) { state.integrity = 0; endGame(); }

@@ -85,6 +85,22 @@ export class Story {
     if (this.seeds >= SEED_TOTAL && this.act === 'act3') this.enterAct('epilogue');
   }
 
+  /** Force-advance to the next act (used by the utility menu). */
+  skip() {
+    this._pendingAct3 = null;
+    switch (this.act) {
+      case 'prologue': this.enterAct('act1'); break;
+      case 'act1': this.enterAct('act2'); break;
+      case 'act2':
+        this.visitedLand = true; this.visitedVortex = true;
+        this.enterAct('act3'); break;
+      case 'act3':
+        this.seeds = SEED_TOTAL; this.arkCharge = 1; this.fx.setArkCharge(1);
+        this.enterAct('epilogue'); break;
+      // epilogue is the final beat — nothing to skip to
+    }
+  }
+
   /* --------------------------- act entry ---------------------------- */
   enterAct(name) {
     this.act = name;
