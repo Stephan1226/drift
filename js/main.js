@@ -137,14 +137,19 @@ const vortexFxEl = document.getElementById('vortexFx');
 const audioChip = document.getElementById('audioChip');
 const devpanel = document.getElementById('devpanel');
 const godChipEl = document.getElementById('godChip');
+const pauseBanner = document.getElementById('pauseBanner');
 let godMode = false;
 let menuOpen = false;
+let paused = false;
 
 function beginGame() {
   audio.start();
   worldReset();
   state.integrity = 100; state.distance = 0; state.cores = 0; state.time = 0;
   state.over = false; state.running = true;
+  paused = false; menuOpen = false;
+  pauseBanner.classList.remove('show');
+  devpanel.classList.remove('show');
   player.reset(START_POS.clone());
   story.begin();
   startOverlay.classList.add('hidden');
@@ -164,7 +169,8 @@ function worldReset() {
 }
 
 function endGame() {
-  state.over = true; state.running = false;
+  state.over = true; state.running = false; paused = false;
+  pauseBanner.classList.remove('show');
   document.exitPointerLock();
   document.getElementById('finalDist').textContent = Math.floor(state.distance).toLocaleString();
   document.getElementById('finalCores').textContent = state.cores;
@@ -173,7 +179,8 @@ function endGame() {
 }
 
 function showEnding() {
-  state.over = true; state.running = false;
+  state.over = true; state.running = false; paused = false;
+  pauseBanner.classList.remove('show');
   document.exitPointerLock();
   document.getElementById('endDist').textContent = Math.floor(state.distance).toLocaleString();
   document.getElementById('endSeeds').textContent = story.seeds;
@@ -190,16 +197,23 @@ startOverlay.addEventListener('click', beginGame);
 document.getElementById('restart').addEventListener('click', (e) => { e.stopPropagation(); beginGame(); });
 document.getElementById('replay').addEventListener('click', (e) => { e.stopPropagation(); beginGame(); });
 
+// losing pointer lock (Esc) = a light pause: HUD stays visible & clickable so
+// the on-screen tools button works; click the view to resume.
 player.onUnlock = () => {
   if (state.running && !state.over && !menuOpen) {
-    state.running = false;
-    startOverlay.classList.remove('hidden');
-    startOverlay.querySelector('.cta').textContent = '▸ 클릭하여 계속';
+    state.running = false; paused = true;
+    pauseBanner.classList.add('show');
   }
 };
-player.onLock = () => { if (!state.over && !menuOpen) state.running = true; };
+player.onLock = () => {
+  if (!state.over && !menuOpen) { state.running = true; paused = false; pauseBanner.classList.remove('show'); }
+};
+// click the canvas to resume from a light pause
+renderer.domElement.addEventListener('click', () => {
+  if (paused && !menuOpen && !state.over) player.requestLock();
+});
 
-// keyboard: mute (M) + utility menu (Tab)
+// keyboard: mute (M) · utility menu (Tab) · skip narration (Enter)
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyM') {
     const on = audio.toggleMute();
@@ -212,6 +226,8 @@ window.addEventListener('keydown', (e) => {
       || !gameoverOverlay.classList.contains('hidden')
       || !endingOverlay.classList.contains('hidden');
     if (!state.over && !onMenuScreen) openMenu();
+  } else if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+    if (!state.over) story.skipLine();
   }
 });
 
@@ -231,7 +247,8 @@ document.getElementById('godBtn').addEventListener('click', toggleGod);
 updateGodUI();
 
 function openMenu() {
-  menuOpen = true; state.running = false;
+  menuOpen = true; state.running = false; paused = false;
+  pauseBanner.classList.remove('show');
   devpanel.classList.add('show');
   if (document.pointerLockElement) document.exitPointerLock();
 }
@@ -240,6 +257,7 @@ function closeMenu() {
   if (!state.over) player.requestLock();
 }
 document.getElementById('resumeBtn').addEventListener('click', closeMenu);
+document.getElementById('toolsBtn').addEventListener('click', (e) => { e.stopPropagation(); openMenu(); });
 document.getElementById('skipBtn').addEventListener('click', () => story.skip());
 
 function teleport(which) {

@@ -91,11 +91,11 @@
       opacity: 0; transition: opacity 0.3s; mix-blend-mode: screen; }
 
     /* ---- cinematic narration ---- */
-    #narration { position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%);
-      z-index: 15; max-width: min(840px, 86vw); text-align: center; pointer-events: none;
-      font-size: 19px; line-height: 1.65; letter-spacing: 0.03em; color: #eef7ff;
-      font-weight: 400; opacity: 0;
-      text-shadow: 0 2px 26px rgba(0,0,0,0.95), 0 0 16px rgba(0,0,0,0.85); }
+    #narration { position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%);
+      z-index: 15; max-width: min(960px, 90vw); text-align: center; pointer-events: none;
+      font-size: clamp(23px, 2.7vw, 32px); line-height: 1.55; letter-spacing: 0.02em; color: #f2f9ff;
+      font-weight: 500; opacity: 0;
+      text-shadow: 0 2px 30px rgba(0,0,0,0.98), 0 0 20px rgba(0,0,0,0.9); }
     #narration:not(.show) { opacity: 0 !important; }
     #narration::after { content: '▌'; margin-left: 3px; opacity: 0.55;
       animation: caret 1s steps(1) infinite; }
@@ -108,6 +108,11 @@
     #objective .otag { font-size: 10px; letter-spacing: 0.25em; opacity: 0.5; text-transform: uppercase; }
     #objText { font-size: 13px; color: #eaf6ff; margin-top: 5px; max-width: 320px;
       border-left: 2px solid rgba(79,233,255,0.55); padding-left: 10px; line-height: 1.5; }
+    #toolsBtn { pointer-events: auto; cursor: pointer; font-family: inherit; margin-top: 11px;
+      font-size: 11px; letter-spacing: 0.12em; color: #cfe9ff; background: rgba(79,233,255,0.07);
+      border: 1px solid rgba(79,233,255,0.32); border-radius: 8px; padding: 7px 13px; transition: all 0.15s; }
+    #toolsBtn:hover { border-color: rgba(79,233,255,0.85); background: rgba(79,233,255,0.16); color: #fff; }
+    #objective:not(.show) #toolsBtn { pointer-events: none; }
 
     /* ---- waypoints ---- */
     #waypoints { position: fixed; inset: 0; z-index: 12; pointer-events: none; }
@@ -190,6 +195,17 @@
     .dbtn.god.on { border-color: rgba(122,255,196,0.9); color: #d6ffe9; background: rgba(122,255,196,0.1); }
     #devpanel .resume { margin-top: 22px; font-size: 13px; letter-spacing: 0.3em;
       color: var(--cyan); text-transform: uppercase; }
+
+    /* ---- light pause (keeps HUD interactive) ---- */
+    #pauseBanner { position: fixed; inset: 0; z-index: 25; display: none;
+      align-items: center; justify-content: center; pointer-events: none;
+      background: radial-gradient(ellipse at center, rgba(4,7,15,0.12), rgba(4,7,15,0.45)); }
+    #pauseBanner.show { display: flex; }
+    #pauseBanner .pbt { font-size: 30px; font-weight: 700; letter-spacing: 0.25em; color: #eaf6ff;
+      text-shadow: 0 0 30px rgba(79,233,255,0.4); }
+    #pauseBanner .pbs { margin-top: 14px; font-size: 13px; letter-spacing: 0.12em; opacity: 0.75; }
+    #pauseBanner kbd { display:inline-block; padding:1px 6px; border:1px solid rgba(207,233,255,0.3);
+      border-radius:4px; font-size:11px; }
   </style>
 
   <script type="importmap">
@@ -211,6 +227,7 @@
   <div id="objective" class="hud">
     <div class="otag">Objective</div>
     <div id="objText"></div>
+    <button id="toolsBtn">⚙ 도구 열기</button>
   </div>
   <div id="waypoints"></div>
   <div id="narration"></div>
@@ -240,8 +257,8 @@
   <canvas id="radar" width="300" height="300"></canvas>
 
   <div id="hint" class="hud">
-    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 &nbsp;·&nbsp;
-    <kbd>SPACE</kbd>/<kbd>SHIFT</kbd> 상승·하강 &nbsp;·&nbsp; 마우스 시선 &nbsp;·&nbsp; <kbd>ESC</kbd> 일시정지
+    <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 &nbsp;·&nbsp; <kbd>SHIFT</kbd> 질주 &nbsp;·&nbsp;
+    <kbd>SPACE</kbd>/<kbd>C</kbd> 상승·하강 &nbsp;·&nbsp; 마우스 시선 &nbsp;·&nbsp; <kbd>ENTER</kbd> 대사 넘기기 &nbsp;·&nbsp; <kbd>ESC</kbd> 일시정지
   </div>
 
   <!-- Overlays -->
@@ -253,7 +270,7 @@
       육지로 도망칠 것인가, 흐름에 몸을 맡길 것인가.<br/>
       아니면, 그 너머의 무언가를 준비할 것인가.<br/><br/>
       <span style="opacity:.6">빛나는 <span style="color:var(--amber)">데이터 코어</span>로 신호를 유지하며 살아남으세요.</span><br/><br/>
-      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · <kbd>SPACE</kbd>/<kbd>SHIFT</kbd> 고도 · 마우스 시선 · <kbd>M</kbd> 음소거
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · <kbd>SHIFT</kbd> 질주 · <kbd>SPACE</kbd>/<kbd>C</kbd> 고도 · 마우스 시선 · <kbd>ENTER</kbd> 대사 넘기기 · <kbd>M</kbd> 음소거
     </div>
     <div class="cta">▸ 클릭하여 표류 시작</div>
     <div class="godtoggle" id="godToggleStart"><span class="dot"></span><span class="gtxt">신호 감소 끄기 (무적 모드)</span></div>
@@ -275,6 +292,13 @@
       <span style="opacity:.75;font-size:14px">표류 거리 <b id="endDist">0</b> · 씨앗 <span id="endSeeds">0</span> · 생존 <span id="endTime">00:00</span></span>
     </div>
     <div class="cta" id="replay" style="pointer-events:auto;cursor:pointer;margin-top:40px">▸ 다시 표류하기</div>
+  </div>
+
+  <div id="pauseBanner">
+    <div class="pb">
+      <div class="pbt">⏸ 일시정지</div>
+      <div class="pbs">화면을 클릭하면 계속 &nbsp;·&nbsp; <kbd>TAB</kbd> 도구 &nbsp;·&nbsp; <kbd>M</kbd> 음소거</div>
+    </div>
   </div>
 
   <div id="devpanel">

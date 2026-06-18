@@ -14,9 +14,10 @@ export class FlyController {
     this.velocity = new THREE.Vector3();
     this.keys = Object.create(null);
 
-    this.speed = 320;       // acceleration
-    this.maxSpeed = 240;    // units / sec
-    this.damping = 6.5;
+    this.speed = 1100;      // acceleration
+    this.maxSpeed = 260;    // units / sec (terminal ~ speed/damping)
+    this.damping = 6.0;
+    this.sprintMul = 2.2;   // hold Shift to sprint
     this.lookSpeed = 0.0022;
 
     this._forward = new THREE.Vector3();
@@ -90,6 +91,7 @@ export class FlyController {
       ),
     );
 
+    let sprint = 1;
     if (this.enabled) {
       const accel = new THREE.Vector3();
       if (this.keys['KeyW']) accel.add(this._forward);
@@ -97,18 +99,20 @@ export class FlyController {
       if (this.keys['KeyD']) accel.add(this._right);
       if (this.keys['KeyA']) accel.sub(this._right);
       if (this.keys['Space']) accel.y += 1;
-      if (this.keys['ShiftLeft'] || this.keys['ShiftRight']) accel.y -= 1;
+      if (this.keys['KeyC']) accel.y -= 1;     // descend
+      if (this.keys['ShiftLeft'] || this.keys['ShiftRight']) sprint = this.sprintMul;
       if (accel.lengthSq() > 0) {
-        accel.normalize().multiplyScalar(this.speed * dt);
+        accel.normalize().multiplyScalar(this.speed * sprint * dt);
         this.velocity.add(accel);
       }
     }
 
-    // damping + speed clamp
+    // damping + speed clamp (cap scales with sprint)
     const damp = Math.exp(-this.damping * dt);
     this.velocity.multiplyScalar(damp);
-    if (this.velocity.length() > this.maxSpeed) {
-      this.velocity.setLength(this.maxSpeed);
+    const maxv = this.maxSpeed * sprint;
+    if (this.velocity.length() > maxv) {
+      this.velocity.setLength(maxv);
     }
 
     this.camera.position.addScaledVector(this.velocity, dt);

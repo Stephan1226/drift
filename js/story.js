@@ -101,6 +101,19 @@ export class Story {
     }
   }
 
+  /** Skip the current narration line (Enter). Advances to the next line; if it
+   *  was the last one, fires the completion callback (e.g. the ending). */
+  skipLine() {
+    if (this._li >= this._lines.length) return;
+    this._li++; this._lt = 0;
+    if (this._li >= this._lines.length) {
+      this.elNarr.classList.remove('show');
+      this.elNarr.style.opacity = 0;
+      const cb = this._onDone; this._onDone = null;
+      if (cb) cb();
+    }
+  }
+
   /* --------------------------- act entry ---------------------------- */
   enterAct(name) {
     this.act = name;
