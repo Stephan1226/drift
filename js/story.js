@@ -101,16 +101,28 @@ export class Story {
     }
   }
 
-  /** Skip the current narration line (Enter). Advances to the next line; if it
-   *  was the last one, fires the completion callback (e.g. the ending). */
+  /** Enter handling, visual-novel style:
+   *  - if the line is still typing → reveal it fully now
+   *  - if it's already fully shown → advance to the next line (or finish). */
   skipLine() {
     if (this._li >= this._lines.length) return;
-    this._li++; this._lt = 0;
-    if (this._li >= this._lines.length) {
-      this.elNarr.classList.remove('show');
-      this.elNarr.style.opacity = 0;
-      const cb = this._onDone; this._onDone = null;
-      if (cb) cb();
+    const line = this._lines[this._li];
+    const typeDur = Math.min(1.3, line.d * 0.5);
+    if (this._lt < typeDur) {
+      // still typing → reveal the whole line immediately
+      this._lt = typeDur;
+      this.elNarr.textContent = line.t;
+      this.elNarr.style.opacity = 1;
+      this.elNarr.classList.add('show');
+    } else {
+      // fully shown → advance to the next line
+      this._li++; this._lt = 0;
+      if (this._li >= this._lines.length) {
+        this.elNarr.classList.remove('show');
+        this.elNarr.style.opacity = 0;
+        const cb = this._onDone; this._onDone = null;
+        if (cb) cb();
+      }
     }
   }
 
